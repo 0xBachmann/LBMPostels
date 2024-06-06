@@ -5,21 +5,25 @@
 
 #include "vtk.hpp"
 
-void write_vtk(std::string_view file_name, const Eigen::Matrix<std::array<double, 2>, -1, -1>& grid, double dx) {
+void write_vtk(const std::string_view file_name, const std::string& field_name, std::span<const double> data, int Nx, int Ny, double dx) {
     std::ofstream file{std::string(file_name)};
 
-    file << "# vtk DataFile Version 2.0\n";
-    file << "\n"; // comment
+    file << "# vtk DataFile Version 3.0\n";
+    file << field_name << "\n"; // Title
     file << "ASCII\n";
     file << std::format("DATASET STRUCTURED_POINTS\n"
-                        "DIMENSIONS {} {} 0\n"
+                        "DIMENSIONS {} {} 1\n"
                         "ORIGIN 0 0 0\n"
-                        "SPACING {} {} 1\n"
-                        "CELL_DATA {}\n"
-                        "VECTORS velocity double\n", grid.rows(), grid.cols(), dx, dx, grid.rows() * grid.cols());
-    for (const auto& col : grid.colwise()) {
-        for (const auto& vel : col) {
-            file << std::format("{}, {}\n", vel[0], vel[1]);
+                        "SPACING {} {} 1\n\n"
+                        "POINT_DATA {}\n"
+                        "SCALARS {} double 1\n"
+                        "LOOKUP_TABLE default\n", Nx, Ny, dx, dx, Nx*Ny, field_name);
+                        
+    for (int i = 0; i < Nx; ++i) {
+        for (int j = 0; j < Ny; ++j) {
+            // file << std::format("{} ", data[i*Ny + j]);
+            file << 10.0 << " ";
+
         }
     }
 }
