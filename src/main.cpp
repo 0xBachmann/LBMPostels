@@ -10,9 +10,10 @@
 #include <fstream>
 #include <ostream>
 
-constexpr int output_frequency = 5;
-constexpr std::size_t Nx = 80;
-constexpr std::size_t Ny = 140;
+constexpr int output_frequency = 10;
+
+constexpr std::size_t Nx = 40;
+constexpr std::size_t Ny = 70;
 constexpr std::size_t Nz = 1;
 constexpr std::size_t N = Nx*Ny*Nz;
 constexpr std::size_t Q = 19;
@@ -35,6 +36,9 @@ constexpr double viscosity = 5e-2;
 constexpr double D = 1e-2;
 constexpr double U = 0.2;
 constexpr double R = Nx/5;
+
+constexpr double Re = R*U/viscosity;
+
 constexpr double relaxation_time = viscosity * cs_2 + 0.5;
 constexpr double relaxation_time_g = D * cs_2 + 0.5;
 constexpr double relaxation_time_inv = 1.0 / relaxation_time;
