@@ -1,3 +1,3 @@
 
 
-add_executable(lbm vtkwriter/vtk.cpp main.cpp vtkwriter/vtk.hpp grid.hpp)
+add_executable(lbm main.cpp cuda_utils.h constants.h types.h lbm.h lattice.h lattice.h lattice.h)

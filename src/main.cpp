@@ -10,80 +10,16 @@
 #include <fstream>
 #include <ostream>
 
-constexpr int output_frequency = 10;
-
-constexpr std::size_t Nx = 40;
-constexpr std::size_t Ny = 70;
-constexpr std::size_t Nz = 1;
-constexpr std::size_t N = Nx*Ny*Nz;
-constexpr std::size_t Q = 19;
-constexpr std::size_t Npop = N*Q;
-
-// TODO: switch cix dependent on Q
-constexpr std::array<double, Q> cqx{0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 0, 0, 1, -1, 1, -1, 0, 0};
-constexpr std::array<double, Q> cqy{0, 0, 0, 1, -1, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, 0, 0, 1, -1};
-constexpr std::array<double, Q> cqz{0, 0, 0, 0, 0, 1, -1, 0, 0, 1, -1, 1, -1, 0, 0, -1, 1, -1, 1};
-constexpr std::array<double, Q> wq{1./3., 1./18., 1./18., 1./18., 1./18., 1./18., 1./18., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36.};
-
-constexpr double dt = 1.;
-constexpr double dx = dt;
-
-// Speed of sound (in lattice units)
-constexpr double cs_2 = 3.; // cs^2 = 1./3. * (dx**2/dt**2)
-constexpr double cs_4 = 9.;
-
-constexpr double viscosity = 5e-2;
-constexpr double D = 1e-2;
-constexpr double U = 0.2;
-constexpr double R = Nx/5;
-
-constexpr double Re = R*U/viscosity;
-
-constexpr double relaxation_time = viscosity * cs_2 + 0.5;
-constexpr double relaxation_time_g = D * cs_2 + 0.5;
-constexpr double relaxation_time_inv = 1.0 / relaxation_time;
-constexpr double relaxation_time_g_inv = 1.0 / relaxation_time_g;
-
-
-
-using PopulationT = std::array<double, Npop>;
-using PopulationCellPtr = double*;
-
-using VelocityT = std::array<double, N*3>;
-using ScalarT = std::array<double, N>;
-
-constexpr bool incompressible = false;
-constexpr double rho0 = 1.0;
-
-double f_eq_q_compressible(int q, const double ux, const double uy, const double uz, const double u2, const double density) {
-    const double uc = ux * cqx[q] + uy * cqy[q] + uz * cqz[q];
-    const double uc2 = uc * uc;
-    return wq[q] * density * (1. + uc * cs_2 + 0.5 * uc2 * cs_4 - 0.5 * u2 * cs_2);
-}
-
-double g_eq_q(int q, const double ux, const double uy, const double uz, const double u2, const double T) {
-    return f_eq_q_compressible(q, ux, uy, uz, u2, T);
-}
-
-double f_eq_q_incompressible(int q, const double ux, const double uy, const double uz, const double u2, const double density) {
-    const double uc = ux * cqx[q] + uy * cqy[q] + uz * cqz[q];
-    const double uc2 = uc * uc;
-    return wq[q] * density + wq[q] * rho0 * (uc * cs_2 + 0.5 * uc2 * cs_4 - 0.5 * u2 * cs_2);
-}
-
-auto f_eq_q = incompressible ? f_eq_q_incompressible : f_eq_q_compressible;
+#include "constants.h"
+#include "types.h"
+#include "lbm.h"
 
 void initialize_populations(PopulationT& f_pop, PopulationT& g_pop, const VelocityT& velocity, const ScalarT& density, const ScalarT& temperature) {
     for(int i = 0; i < N; ++i) {
-        const double ux = velocity[i*3];
-        const double uy = velocity[i*3 + 1];
-        const double uz = velocity[i*3 + 2];
-        const double u2 = ux * ux + uy * uy + uz * uz;
-        const double cell_density = density[i];
-        const double cell_temperature = temperature[i];
+        auto init_data = get_cell_init_data(i, velocity, density, temperature);
         for(int q = 0; q < Q; ++q) {
-            f_pop[i*Q + q] = f_eq_q(q, ux, uy, uz, u2, cell_density);
-            g_pop[i*Q + q] = g_eq_q(q, ux, uy, uz, u2, cell_temperature);
+            f_pop[i*Q + q] = f_eq_q(q, init_data);
+            g_pop[i*Q + q] = g_eq_q(q, init_data);
         }
     }
 }
@@ -91,11 +27,12 @@ void initialize_populations(PopulationT& f_pop, PopulationT& g_pop, const Veloci
 void initialize_moments(VelocityT& velocity, ScalarT& density, ScalarT& temperature) {
     for(int i = 0; i < N; ++i) {
         for(int dim = 0; dim < 3; ++dim) {
-            velocity[i*3 + dim] = 0.;
+            velocity[i * 3 + dim] = vel_init(i, dim);
+            //velocity[i*3 + dim] = 0.;
         }
-        velocity[i*3 + 1] = U;
+        //velocity[i*3 + 1] = U;
         density[i] = 1.0;
-        temperature[i] = 0.0;
+        temperature[i] = temperature_init(i);
     }
 
     for(int i = 0; i < Nx; ++i) {
@@ -106,23 +43,13 @@ void initialize_moments(VelocityT& velocity, ScalarT& density, ScalarT& temperat
                 if((i - Nx/2)*(i - Nx/2) + (j - Ny/3)*(j - Ny/3) < (R)*(R)) {
                     for(int dim = 0; dim < 3; ++dim) {
                         // velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] = 0;
-                        velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] = 0;
-                        temperature[i*Ny*Nz + j*Nz + k] = 1.0;
-                    }                    
+                        //velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] = 0;
+                        // temperature[i*Ny*Nz + j*Nz + k] = 1.0;
+                    }
                 }
             }
         }
     }
-
-    // for(int i = 0; i < Nx; ++i) {
-    //     for(int j = 0; j < Ny; ++j) {
-    //         for(int k = 0; k < Nz; ++k) {
-    //             for(int dim = 0; dim < 3; ++dim) {
-    //                 velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] = 0.0;
-    //             }
-    //         }
-    //     }
-    // }
 }
 
 void relax_populations(PopulationT& f_pop, PopulationT& g_pop, const VelocityT& velocity, const ScalarT& density, const ScalarT& temperature) {
@@ -138,10 +65,6 @@ void relax_populations(PopulationT& f_pop, PopulationT& g_pop, const VelocityT& 
             g_pop[i*Q + q] = (1.0 - relaxation_time_g_inv) * g_pop[i*Q + q] + relaxation_time_g_inv * g_eq_q(q, ux, uy, uz, u2, cell_temperature);
         }
     }
-}
-
-int cell_pop_idx(int i, int j, int k) {
-    return ((i+Nx)%Nx)*Ny*Nz*Q + ((j+Ny)%Ny)*Nz*Q + ((k+Nz)%Nz)*Q;
 }
 
 // BB Boundary
