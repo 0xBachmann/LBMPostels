@@ -10,16 +10,16 @@
 #include <fstream>
 #include <ostream>
 
-
-constexpr std::size_t Nx = 200;
-constexpr std::size_t Ny = 100;
+constexpr int output_frequency = 5;
+constexpr std::size_t Nx = 100;
+constexpr std::size_t Ny = 140;
 constexpr std::size_t Nz = 1;
 constexpr std::size_t N = Nx*Ny*Nz;
 constexpr std::size_t Q = 19;
 constexpr std::size_t Npop = N*Q;
 
 // TODO: switch cix dependent on Q
-constexpr std::array<double, Q> cqx{0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 0, 0, 1, -1, 1, -1, 0};
+constexpr std::array<double, Q> cqx{0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 0, 0, 1, -1, 1, -1, 0, 0};
 constexpr std::array<double, Q> cqy{0, 0, 0, 1, -1, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, 0, 0, 1, -1};
 constexpr std::array<double, Q> cqz{0, 0, 0, 0, 0, 1, -1, 0, 0, 1, -1, 1, -1, 0, 0, -1, 1, -1, 1};
 constexpr std::array<double, Q> wq{1./3., 1./18., 1./18., 1./18., 1./18., 1./18., 1./18., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36., 1./36.};
@@ -31,10 +31,11 @@ constexpr double dx = dt;
 constexpr double cs_2 = 3.; // cs^2 = 1./3. * (dx**2/dt**2)
 constexpr double cs_4 = 9.;
 
-constexpr double viscosity = 5e-5;
+constexpr double viscosity = 5e-2;
+constexpr double U = 0.2;
+constexpr double R = Nx/5;
 constexpr double relaxation_time = viscosity * cs_2 + 0.5;
 constexpr double relaxation_time_inv = 1.0 / relaxation_time;
-
 
 
 using PopulationT = std::array<double, Npop>;
@@ -43,12 +44,22 @@ using PopulationCellPtr = double*;
 using VelocityT = std::array<double, N*3>;
 using DensityT = std::array<double, N>;
 
+constexpr bool incompressible = false;
+constexpr double rho0 = 1.0;
 
-double f_eq_q(int q, const double ux, const double uy, const double uz, const double u2, const double density) {
+double f_eq_q_compressible(int q, const double ux, const double uy, const double uz, const double u2, const double density) {
     const double uc = ux * cqx[q] + uy * cqy[q] + uz * cqz[q];
     const double uc2 = uc * uc;
     return wq[q] * density * (1. + uc * cs_2 + 0.5 * uc2 * cs_4 - 0.5 * u2 * cs_2);
 }
+
+double f_eq_q_incompressible(int q, const double ux, const double uy, const double uz, const double u2, const double density) {
+    const double uc = ux * cqx[q] + uy * cqy[q] + uz * cqz[q];
+    const double uc2 = uc * uc;
+    return wq[q] * density + wq[q] * rho0 * (uc * cs_2 + 0.5 * uc2 * cs_4 - 0.5 * u2 * cs_2);
+}
+
+auto f_eq_q = incompressible ? f_eq_q_incompressible : f_eq_q_compressible;
 
 void initialize_population(PopulationT& f_pop, const VelocityT& velocity, const DensityT& density) {
     for(int i = 0; i < N; ++i) {
@@ -68,18 +79,34 @@ void initialize_moments(VelocityT& velocity, DensityT& density) {
         for(int dim = 0; dim < 3; ++dim) {
             velocity[i*3 + dim] = 0.;
         }
-        density[i] = 1.0;     
+        velocity[i*3 + 1] = U;
+        density[i] = 1.0;
     }
 
     for(int i = 0; i < Nx; ++i) {
         for(int j = 0; j < Ny; ++j) {
             for(int k = 0; k < Nz; ++k) {
-                for(int dim = 0; dim < 3; ++dim) {
-                    velocity[i*Ny*Nz*3 + j*Nz*3 + k*3] = 0.0;
+                // velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + 1] += 0.001;
+                //velocity[i*Ny*Nz*3 + j*Nz*3 + k*3+1] += 0.001;
+                if((i - Nx/2)*(i - Nx/2) + (j - Ny/3)*(j - Ny/3) < (R)*(R)) {
+                    for(int dim = 0; dim < 3; ++dim) {
+                        // velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] = 0;
+                        velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] = 0;
+                    }                    
                 }
             }
         }
     }
+
+    // for(int i = 0; i < Nx; ++i) {
+    //     for(int j = 0; j < Ny; ++j) {
+    //         for(int k = 0; k < Nz; ++k) {
+    //             for(int dim = 0; dim < 3; ++dim) {
+    //                 velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] = 0.0;
+    //             }
+    //         }
+    //     }
+    // }
 }
 
 void relax_population(PopulationT& f_pop, const VelocityT& velocity, const DensityT& density) {
@@ -96,13 +123,13 @@ void relax_population(PopulationT& f_pop, const VelocityT& velocity, const Densi
 }
 
 int cell_pop_idx(int i, int j, int k) {
-    return (i%Nx)*Ny*Nz*Q + (j%Ny)*Nz*Q + (k%Nz)*Q;
+    return ((i+Nx)%Nx)*Ny*Nz*Q + ((j+Ny)%Ny)*Nz*Q + ((k+Nz)%Nz)*Q;
 }
 
 // BB Boundary
 // If q is odd we have to add one to it to find the flipped vector index
 // If even we remove one
-template <typename P>
+template<typename P>
 void apply_BB_boundary(PopulationT& f_pop, PopulationT& f_pop_buffer, int i, int j, int k, P&& predicate) {
     const double current_cell_idx = cell_pop_idx(i, j, k);
     for(int q = 0; q < Q; ++q) {
@@ -200,15 +227,15 @@ void apply_force(VelocityT& velocity) {
     for(int i = 0; i < Nx; ++i) {
         for(int j = 0; j < Ny; ++j) {
             for(int k = 0; k < Nz; ++k) {
-                velocity[i*Ny*Nz*3 + j*Nz*3 + k*3] += 0.001;
-            }
-        }
-    }
-    for(int i = 2*Nx/5; i < 3*Nx/5; ++i){
-        for(int j = 2*Ny/5; j < 3*Ny/5; ++j) {
-            for(int k = 0; k < Nz; ++k) {
-                for(int dim = 0; dim < 3; ++dim) {
-                    velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] = 0.99*velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim];
+                // velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + 1] += 0.001;
+                //velocity[i*Ny*Nz*3 + j*Nz*3 + k*3+1] += 0.001;
+                // if(j < Ny/5)
+                    // velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + 1] += 0.001;
+                if((i - Nx/2)*(i - Nx/2) + (j - Ny/3)*(j - Ny/3) < (R)*(R)) {
+                    for(int dim = 0; dim < 3; ++dim) {
+                        // velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] = 0.9*velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim];
+                        velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] = 0;
+                    }                    
                 }
             }
         }
@@ -218,7 +245,7 @@ void write_vtk(const std::string_view file_name, const DensityT& density, const 
     std::ofstream file{std::string(file_name)};
 
     file << "# vtk DataFile Version 3.0\n";
-    file << "LBM DATA" << "\n"; // Title
+    file << "LBM DATA\n"; // Title
     file << "ASCII\n";
     
     file << std::format("DATASET STRUCTURED_POINTS\n"
@@ -230,11 +257,21 @@ void write_vtk(const std::string_view file_name, const DensityT& density, const 
     //                                   "LOOKUP_TABLE default\n";
     
     file << "VECTORS velocity double\n";
-    for (int i = 0; i < N; ++i) {
-        for(int dim = 0; dim < 3; ++dim) {
-            file << velocity[i*3 + dim] << " ";
+    // for (int i = 0; i < N; ++i) {
+    //     for(int dim = 0; dim < 3; ++dim) {
+    //         file << velocity[i*3 + dim] << " ";
+    //     }
+    //     file << "\n";
+    // }
+    for(int k = 0; k < Nz; ++k) {
+        for(int j = 0; j < Ny; ++j) {
+            for(int i = 0; i < Nx; ++i) {
+                for(int dim = 0; dim < 3; ++dim) {
+                    file << velocity[i*Ny*Nz*3 + j*Nz*3 + k*3 + dim] << " ";
+                }
+                file << "\n";
+            }
         }
-        file << "\n";
     }
 
     // file << std::format(scalars_data_string, "velocity_y");
@@ -264,7 +301,7 @@ int main() {
     DensityT density;
 
     // TODO: make this user input
-    const int Nsteps = 1000;
+    const int Nsteps = 10000;
 
     // 1. Initial conditions 
     initialize_moments(velocity, density);
@@ -273,18 +310,19 @@ int main() {
     // 2. Time stepping
     for(int t = 0; t < Nsteps; ++t){
         if(!((t+1) % 10))
-            std::cout << std::format("{}/{} steps \n", t+1, Nsteps);
+            std::cout << std::format("{}/{} steps\r", t+1, Nsteps) << std::endl;
         // 2.0 Forcing
         apply_force(velocity);
+        if(t==0)
+            write_vtk(std::format("hello-0.vtk") , density, velocity);
         // 2.1 Relaxation
         relax_population(f_pop, velocity, density);
         // 2.2 Streaming
         stream_population(f_pop, f_pop_buffer);
         // 2.3 Update moments
         update_moments(velocity, density, f_pop);
-        if(!(t % 10))
-            write_vtk(std::format("hello-{}.vtk",t/10) , density, velocity);
-
+        if(!(t % output_frequency))
+            write_vtk(std::format("hello-{}.vtk",t/output_frequency+1) , density, velocity);
     }
 
 
