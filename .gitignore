@@ -2,3 +2,4 @@ cmake-*-debug
 .idea
 build
 .vscode
+/cmake-build-release/
