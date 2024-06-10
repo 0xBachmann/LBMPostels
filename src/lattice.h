@@ -5,13 +5,13 @@
 
 #include "constants.h"
 
-int cell_pop_idx(int i, int j, int k) {
+CUDA_HOST_DEVICE int cell_pop_idx(int i, int j, int k) {
     return ((i+Nx)%Nx)*Ny*Nz*Q + ((j+Ny)%Ny)*Nz*Q + ((k+Nz)%Nz)*Q;
 }
 
 
 // returns (i,j,k)
-std::array<int, 3> cell_pos(int idx) {
+CUDA_HOST_DEVICE std::array<int, 3> cell_pos(int idx) {
     int k = idx % Nz;
     int j = (idx / Nz) % Ny;
     int i = (idx / (Nz * Ny));
@@ -20,7 +20,7 @@ std::array<int, 3> cell_pos(int idx) {
 
 
 // returns (i,j,k,q)
-std::array<int, 4> cell_vec_pos(int idx) {
+CUDA_HOST_DEVICE std::array<int, 4> cell_vec_pos(int idx) {
     int q = idx % Q;
     int k = (idx / Q) % Nz;
     int j = (idx / (Q * Nz)) % Ny;
